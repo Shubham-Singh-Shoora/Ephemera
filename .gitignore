@@ -25,3 +25,8 @@ frontend/.vercel/
 .DS_Store
 Thumbs.db
 *.log
+*.tsbuildinfo
+audit-*.json
+*-results.txt
+artifacts/
+cache/

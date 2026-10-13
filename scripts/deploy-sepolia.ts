@@ -6,7 +6,7 @@ dotenv.config();
 
 /**
  * Ethereum Sepolia Testnet Deployment Script
- * 
+ *
  * Deploys DeadDropCoordinator.sol to Sepolia testnet.
  */
 async function main() {
@@ -23,21 +23,33 @@ async function main() {
     process.exit(1);
   }
 
-  // Chainlink Functions Router on Ethereum Sepolia
-  // https://docs.chain.link/chainlink-functions/supported-networks
-  const CHAINLINK_SEPOLIA_ROUTER = process.env.CHAINLINK_ROUTER_ADDRESS || '0xb83E47D23078804FE775CA7E301104377Ce80d44';
+  // Explicit trusted simulator; this contract does not implement Chainlink callbacks.
+  const simulationOracle = process.env.SIMULATION_ORACLE_ADDRESS;
+  if (
+    !simulationOracle ||
+    !ethers.isAddress(simulationOracle) ||
+    simulationOracle === ethers.ZeroAddress
+  ) {
+    throw new Error(
+      'Set SIMULATION_ORACLE_ADDRESS explicitly. This contract is a simulation coordinator, not a Chainlink router client.',
+    );
+  }
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
+  if ((await provider.getNetwork()).chainId !== 11155111n)
+    throw new Error('Deployment is restricted to Sepolia testnet.');
   const wallet = new ethers.Wallet(privateKey, provider);
   const balance = await provider.getBalance(wallet.address);
 
   console.log(`Deployer Address: ${wallet.address}`);
   console.log(`Balance:          ${ethers.formatEther(balance)} Sepolia ETH`);
-  console.log(`Chainlink Router: ${CHAINLINK_SEPOLIA_ROUTER}`);
+  console.log(`Simulation oracle: ${simulationOracle}`);
 
   if (balance === 0n) {
     console.error('\n❌ Insufficient funds: Your wallet has 0 Sepolia ETH.');
-    console.error('   Get free testnet ETH from: https://faucets.chain.link or https://sepoliafaucet.com\n');
+    console.error(
+      '   Get free testnet ETH from: https://faucets.chain.link or https://sepoliafaucet.com\n',
+    );
     process.exit(1);
   }
 
@@ -46,7 +58,7 @@ async function main() {
 
   console.log('Broadcasting deployment transaction...');
   const factory = new ethers.ContractFactory(artifact.abi, artifact.bytecode, wallet);
-  const contract = await factory.deploy(CHAINLINK_SEPOLIA_ROUTER);
+  const contract = await factory.deploy(simulationOracle);
 
   console.log(`Transaction Hash: ${contract.deploymentTransaction()?.hash}`);
   console.log('Waiting for block confirmation on Sepolia...');
@@ -62,7 +74,7 @@ async function main() {
   console.log('======================================================\n');
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error('Deployment failed:', err);
   process.exit(1);
 });

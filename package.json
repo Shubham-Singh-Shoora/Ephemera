@@ -1,7 +1,8 @@
 {
-  "name": "ephemeral-dead-drop-swarm",
+  "name": "ephemera",
   "version": "1.0.0",
-  "description": "Ephemeral, Dead-Drop AI Knowledge Base on Ethereum Swarm & TEEs",
+  "description": "Temporary browser document rooms and isolated Swarm research tools",
+  "private": true,
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -17,7 +18,14 @@
     "ui": "npm --prefix frontend run dev",
     "ui:build": "npm --prefix frontend run build",
     "deploy:sepolia": "tsx scripts/deploy-sepolia.ts",
-    "vercel-build": "npm --prefix frontend install && npm --prefix frontend run build"
+    "vercel-build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "test": "node --import tsx --test test/security/*.test.ts",
+    "test:http": "node --test test/security/http.test.mjs",
+    "test:legacy": "npm run test:crypto && npm run test:dead-drop && npm run test:ai && npm run test:contract",
+    "check": "npm run build && npm test && npm run test:legacy && npm run ui:build && npm run test:http:production",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:http:production": "node scripts/test-http.mjs"
   },
   "keywords": [
     "swarm",
@@ -25,23 +33,29 @@
     "confidential-computing",
     "tee",
     "rag",
-    "zero-trace",
     "ephemeral-data"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@ethersphere/bee-js": "^9.1.0",
-    "dotenv": "^16.4.7",
-    "ethers": "^6.13.5",
-    "express": "^4.21.2",
-    "solc": "^0.8.37"
+    "@ethersphere/bee-js": "^13.1.0",
+    "dotenv": "^18.0.7",
+    "ethers": "^6.17.0",
+    "express": "^5.3.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.4",
-    "ganache": "^7.9.2",
+    "hardhat": "^3.19.0",
+    "prettier": "^3.9.10",
+    "solc": "^0.8.36",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
+  },
+  "overrides": {
+    "tmp": "^0.2.7"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

@@ -2,10 +2,12 @@ import { MockBeeServer } from '../src/dev-mock/mock-bee.js';
 import { ingestDeadDrop } from '../src/ingestion.js';
 import { SwarmDeadDropClient } from '../src/swarm/client.js';
 import { unpackEncryptedData, decryptAES256GCM } from '../src/crypto/aes.js';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 async function runDeadDropEndToEndTest() {
   console.log('===========================================================');
-  console.log('🧪 RUNNING END-TO-END DEAD-DROP SELF-DESTRUCTION TEST');
+  console.log('🧪 RUNNING LOCAL ENCRYPTION AND MOCK EXPIRY TEST');
   console.log('===========================================================\n');
 
   const TEST_PORT = 1635;
@@ -21,7 +23,7 @@ async function runDeadDropEndToEndTest() {
       filePath: './test-data/confidential_patient_record.json',
       ttlSeconds: 60, // 60 seconds TTL
       batchDepth: 17,
-      beeUrl: `http://localhost:${TEST_PORT}`
+      beeUrl: `http://localhost:${TEST_PORT}`,
     });
 
     const { swarmReference, ephemeralKey, batchId } = result;
@@ -33,26 +35,28 @@ async function runDeadDropEndToEndTest() {
     const rawText = rawDownloadedBytes.toString('utf-8');
 
     // Ensure the raw downloaded bytes contain NO patient keywords
-    const containsLeakedKeywords = 
-      rawText.includes('AIIMS') || 
-      rawText.includes('Carcinoma') || 
-      rawText.includes('TX-409');
+    const containsLeakedKeywords =
+      rawText.includes('AIIMS') || rawText.includes('Carcinoma') || rawText.includes('TX-409');
 
     if (containsLeakedKeywords) {
-      throw new Error('SECURITY VIOLATION: Confidential patient data leaked in plaintext on Swarm!');
+      throw new Error(
+        'SECURITY VIOLATION: Confidential patient data leaked in plaintext on Swarm!',
+      );
     }
-    console.log('✅ PASS: Swarm node stores ONLY encrypted ciphertext. Zero plaintext leakage.');
+    console.log('✅ PASS: Local mock ciphertext excludes the fixture keywords.');
 
     // Step 3: Decrypt in-memory using the ephemeral key
     console.log('\n--- PHASE 1.3: IN-MEMORY DECRYPTION (TEE SIMULATION) ---');
     const unpacked = unpackEncryptedData(rawDownloadedBytes);
     const decryptedBuffer = decryptAES256GCM(unpacked, ephemeralKey);
-    const decryptedPatientRecord = JSON.parse(decryptedBuffer.toString('utf-8'));
-
-    console.log(`✅ PASS: In-memory decryption succeeded!`);
-    console.log(`   Patient UHID:   ${decryptedPatientRecord.patient.uhid}`);
-    console.log(`   Diagnosis:      ${decryptedPatientRecord.patient.primaryDiagnosis}`);
-    console.log(`   Drug Response:  ${decryptedPatientRecord.patient.proprietaryTrialTreatment.experimentalCompound}`);
+    const fixture = await readFile('./test-data/confidential_patient_record.json');
+    try {
+      assert.deepEqual(decryptedBuffer, fixture);
+    } finally {
+      fixture.fill(0);
+      decryptedBuffer.fill(0);
+    }
+    console.log('✅ PASS: Decrypted bytes exactly match the fictional fixture.');
 
     // Step 4: Simulate Swarm TTL Expiration (Self-Destruct)
     console.log('\n--- PHASE 1.4: SIMULATING BATCH TTL EXPIRATION (SELF-DESTRUCT) ---');
@@ -73,14 +77,14 @@ async function runDeadDropEndToEndTest() {
     }
 
     console.log('\n===========================================================');
-    console.log('🎉 DEAD-DROP LIFECYCLE VERIFIED: ZERO TRACES REMAINING! ✅');
+    console.log('🎉 LOCAL MOCK LIFECYCLE PASSED. No distributed deletion claim. ✅');
     console.log('===========================================================');
   } finally {
     await mockBee.stop();
   }
 }
 
-runDeadDropEndToEndTest().catch(err => {
+runDeadDropEndToEndTest().catch((err) => {
   console.error('Test suite failed:', err);
   process.exit(1);
 });

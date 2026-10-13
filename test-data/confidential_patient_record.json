@@ -1,0 +1,11 @@
+{
+  "synthetic": true,
+  "patient": {
+    "uhid": "FICTIONAL-001",
+    "primaryDiagnosis": "Fictional example only",
+    "proprietaryTrialTreatment": {
+      "experimentalCompound": "TX-409 (invented sample)",
+      "notes": "No real patient data. Example response and reduction vocabulary for legacy simulator tests."
+    }
+  }
+}

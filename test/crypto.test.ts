@@ -1,4 +1,9 @@
-import { encryptAES256GCM, decryptAES256GCM, packEncryptedData, unpackEncryptedData } from '../src/crypto/aes.js';
+import {
+  encryptAES256GCM,
+  decryptAES256GCM,
+  packEncryptedData,
+  unpackEncryptedData,
+} from '../src/crypto/aes.js';
 import { generateEphemeralKey } from '../src/crypto/keygen.js';
 
 function runTests() {
@@ -11,8 +16,8 @@ function runTests() {
     confidentialNotes: 'Proprietary clinical trial drug response sequence',
     dosageHistory: [
       { date: '2026-03-01', compound: 'TX-409', amountMg: 50 },
-      { date: '2026-03-08', compound: 'TX-409', amountMg: 75 }
-    ]
+      { date: '2026-03-08', compound: 'TX-409', amountMg: 75 },
+    ],
   });
 
   // Test 1: Encryption & Decryption Roundtrip

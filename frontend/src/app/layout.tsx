@@ -1,21 +1,15 @@
 import type { Metadata } from 'next';
 import './globals.css';
-
 export const metadata: Metadata = {
-  title: 'DeadDrop AI | Self-Destructing Confidential Data Room',
-  description: 'Enterprise zero-trace data room for confidential AI inference. Data physically self-destructs upon timer expiration.',
+  title: 'ephemera — A study in leaving less behind',
+  description:
+    'Follow the life of a file through an interactive story, then explore a temporary, browser-only data room. A research prototype with clear boundaries.',
+  robots: { index: false, follow: false },
 };
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#090D16] text-[#E5E7EB]">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

@@ -1,4 +1,9 @@
-import { MemoryScrubber } from './memory-scrubber.js';
+import {
+  MAX_INDEX_CHUNKS,
+  MAX_PASSAGE_CHARS,
+  MAX_RESEARCH_BYTES,
+  validateIndexInput,
+} from './input-limits.js';
 
 export interface KnowledgeChunk {
   id: string;
@@ -14,29 +19,39 @@ export interface SearchResult {
 }
 
 /**
- * Universal In-Memory Semantic Vector Knowledge Base
- * 
- * Works for ANY industry (Healthcare, Finance, Legal, Cyber, Code).
- * Sits entirely in RAM. Does not write to Chroma or disk.
+ * Bounded local token-hash index shared across research fixtures.
+ * Similarity is lexical, not model inference or a domain-specific conclusion.
  */
 export class InMemoryKnowledgeBase {
   private chunks: KnowledgeChunk[] = [];
-  private vocabulary: Map<string, number> = new Map();
-  private nextVocabId: number = 0;
+  private indexedBytes = 0;
   private isDisposed: boolean = false;
 
   /**
    * Ingests arbitrary text or structured JSON into the in-memory vector index.
    */
-  public ingest(data: any, sourceType: string = 'generic'): void {
+  public ingest(data: unknown, sourceType: string = 'generic'): void {
     if (this.isDisposed) {
       throw new Error('KnowledgeBase has been disposed/scrubbed!');
     }
 
-    if (typeof data === 'string') {
-      this.ingestText(data, sourceType);
-    } else if (typeof data === 'object' && data !== null) {
-      this.ingestStructuredObject(data, sourceType);
+    validateIndexInput(data);
+    if (typeof sourceType !== 'string' || sourceType.length > 64)
+      throw new Error('Invalid source label.');
+    const start = this.chunks.length;
+    const previousBytes = this.indexedBytes;
+    try {
+      if (typeof data === 'string') this.ingestText(data, sourceType);
+      else if (typeof data === 'object' && data !== null)
+        this.ingestStructuredObject(data, sourceType);
+    } catch (error) {
+      for (const chunk of this.chunks.splice(start)) {
+        chunk.vector.fill(0);
+        chunk.content = '';
+        chunk.section = '';
+      }
+      this.indexedBytes = previousBytes;
+      throw error;
     }
   }
 
@@ -44,8 +59,8 @@ export class InMemoryKnowledgeBase {
     // Split markdown or text into paragraphs / sections
     const paragraphs = text
       .split(/\n\s*\n/)
-      .map(p => p.trim())
-      .filter(p => p.length > 20);
+      .map((p) => p.trim())
+      .filter((p) => p.length > 20);
 
     paragraphs.forEach((p, index) => {
       let sectionName = `Section-${index + 1}`;
@@ -58,15 +73,15 @@ export class InMemoryKnowledgeBase {
         id: `chunk-${this.chunks.length + 1}`,
         sourceType,
         section: sectionName,
-        content: p
+        content: p,
       });
     });
   }
 
-  private ingestStructuredObject(obj: any, sourceType: string, prefix: string = ''): void {
+  private ingestStructuredObject(obj: object, sourceType: string, prefix: string = ''): void {
     // Flatten nested JSON into semantic passages
     for (const [key, value] of Object.entries(obj)) {
-      const currentPath = prefix ? `${prefix}.${key}` : key;
+      const currentPath = (prefix ? `${prefix}.${key.slice(0, 80)}` : key).slice(0, 160);
 
       if (Array.isArray(value)) {
         value.forEach((item, idx) => {
@@ -78,14 +93,14 @@ export class InMemoryKnowledgeBase {
               id: `chunk-${this.chunks.length + 1}`,
               sourceType,
               section: `${currentPath}[${idx}]`,
-              content: `[${currentPath} #${idx + 1}] ${summary}`
+              content: `[${currentPath} #${idx + 1}] ${summary}`,
             });
           } else {
             this.addChunk({
               id: `chunk-${this.chunks.length + 1}`,
               sourceType,
               section: currentPath,
-              content: `${currentPath}[${idx}]: ${item}`
+              content: `${currentPath}[${idx}]: ${item}`,
             });
           }
         });
@@ -96,18 +111,30 @@ export class InMemoryKnowledgeBase {
           id: `chunk-${this.chunks.length + 1}`,
           sourceType,
           section: currentPath,
-          content: `${currentPath}: ${value}`
+          content: `${currentPath}: ${value}`,
         });
       }
     }
   }
 
   private addChunk(chunkData: Omit<KnowledgeChunk, 'vector'>): void {
-    const vector = this.embedText(chunkData.content);
-    this.chunks.push({
-      ...chunkData,
-      vector
-    });
+    for (let offset = 0; offset < chunkData.content.length;) {
+      let end = Math.min(offset + MAX_PASSAGE_CHARS, chunkData.content.length);
+      if (end < chunkData.content.length && /[\uD800-\uDBFF]/.test(chunkData.content[end - 1]))
+        end--;
+      const content = chunkData.content.slice(offset, end);
+      const bytes = Buffer.byteLength(content, 'utf8');
+      if (this.chunks.length >= MAX_INDEX_CHUNKS || this.indexedBytes + bytes > MAX_RESEARCH_BYTES)
+        throw new Error('Document exceeds the index resource limit.');
+      this.chunks.push({
+        ...chunkData,
+        id: `chunk-${this.chunks.length + 1}`,
+        content,
+        vector: this.embedText(content),
+      });
+      this.indexedBytes += bytes;
+      offset = end;
+    }
   }
 
   /**
@@ -149,9 +176,18 @@ export class InMemoryKnowledgeBase {
     if (this.isDisposed) {
       throw new Error('KnowledgeBase has been disposed/scrubbed!');
     }
+    if (
+      typeof query !== 'string' ||
+      !query.trim() ||
+      query.length > 2000 ||
+      !Number.isSafeInteger(topK) ||
+      topK < 1 ||
+      topK > 10
+    )
+      throw new Error('Invalid search request.');
 
     const queryVector = this.embedText(query);
-    const scored = this.chunks.map(chunk => {
+    const scored = this.chunks.map((chunk) => {
       // Cosine similarity between unit vectors is the dot product
       let dotProduct = 0;
       for (let i = 0; i < queryVector.length; i++) {
@@ -159,7 +195,7 @@ export class InMemoryKnowledgeBase {
       }
       return {
         chunk,
-        similarity: dotProduct
+        similarity: dotProduct,
       };
     });
 
@@ -172,7 +208,7 @@ export class InMemoryKnowledgeBase {
   }
 
   /**
-   * Forensic RAM scrubber: zeroes out all vectors, clears vocabulary and chunk arrays.
+   * Best-effort disposal of owned vectors and references, not forensic erasure.
    */
   public dispose(): void {
     for (const chunk of this.chunks) {
@@ -181,7 +217,7 @@ export class InMemoryKnowledgeBase {
       chunk.section = '';
     }
     this.chunks.length = 0;
-    this.vocabulary.clear();
+    this.indexedBytes = 0;
     this.isDisposed = true;
   }
 }

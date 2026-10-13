@@ -1,4 +1,4 @@
-import ganache from 'ganache';
+import { createTestChain } from './helpers/local-chain.js';
 import { ethers } from 'ethers';
 import { compileDeadDropCoordinator } from '../src/chainlink/compiler.js';
 import { MockBeeServer } from '../src/dev-mock/mock-bee.js';
@@ -6,10 +6,11 @@ import { ingestDeadDrop } from '../src/ingestion.js';
 import { ChainlinkSecretsManager } from '../src/chainlink/secrets.js';
 import { DeadDropCoordinatorClient } from '../src/chainlink/coordinator-client.js';
 import { ChainlinkTEESimulator } from '../src/chainlink/tee-simulator.js';
+import assert from 'node:assert/strict';
 
 async function runSmartContractTEETest() {
   console.log('===========================================================');
-  console.log('🧪 RUNNING PHASE 3 SMART CONTRACT & CHAINLINK TEE TEST');
+  console.log('🧪 RUNNING LOCAL COORDINATOR AND SIMULATOR TEST');
   console.log('===========================================================\n');
 
   // Step 1: Start local Mock Bee server
@@ -17,15 +18,11 @@ async function runSmartContractTEETest() {
   const mockBee = new MockBeeServer(TEST_BEE_PORT);
   await mockBee.start();
 
-  // Step 2: Start in-memory Ganache EVM blockchain
-  console.log('[Setup] Starting local in-memory EVM blockchain (Ganache)...');
-  const ganacheProvider = ganache.provider({
-    logging: { quiet: true },
-    wallet: { totalAccounts: 5, defaultBalance: 100 },
-    chain: { hardfork: 'london' }
-  });
+  // Step 2: Start an isolated Hardhat EVM.
+  console.log('[Setup] Starting local in-memory Hardhat EVM...');
+  const localProvider = await createTestChain();
 
-  const ethersProvider = new ethers.BrowserProvider(ganacheProvider as any);
+  const ethersProvider = new ethers.BrowserProvider(localProvider);
   const signer0 = await ethersProvider.getSigner(0); // Data Provider / Deployer
   const signer1 = await ethersProvider.getSigner(1); // Chainlink TEE Oracle Node
 
@@ -52,13 +49,14 @@ async function runSmartContractTEETest() {
       filePath: './test-data/confidential_legal_merger.md',
       ttlSeconds: 3600,
       batchDepth: 17,
-      beeUrl
+      beeUrl,
     });
 
-    // Encrypt ephemeral key for Chainlink DON TEE
-    console.log('[1.1] Encrypting ephemeral AES key using DON threshold public key...');
-    const encryptedSecret = ChainlinkSecretsManager.encryptSecretForDON(deadDropReceipt.ephemeralKey);
-    console.log(`      Encrypted Secret Ciphertext: ${encryptedSecret.encryptedKeyHex.slice(0, 32)}...`);
+    // Process-local key wrapping only; no DON or enclave is involved.
+    console.log('[1.1] Wrapping the synthetic session key for the local simulator...');
+    const encryptedSecret = ChainlinkSecretsManager.encryptSecretForDON(
+      deadDropReceipt.ephemeralKey,
+    );
 
     // Call requestComputeJob on smart contract with 0.05 ETH escrow
     console.log('[1.2] Registering compute job on-chain with 0.05 ETH escrow reward...');
@@ -66,7 +64,7 @@ async function runSmartContractTEETest() {
       deadDropReceipt.swarmReference,
       0, // TaskType.RAG_QUERY
       3600,
-      '0.05'
+      '0.05',
     );
     console.log(`      ✅ Job Created On-Chain! Job ID: ${jobId}`);
 
@@ -80,27 +78,34 @@ async function runSmartContractTEETest() {
     // -------------------------------------------------------------
     // SCENARIO 2: CHAINLINK TEE ENCLAVE FULFILLS JOB & CLAIMS BOUNTY
     // -------------------------------------------------------------
-    console.log('\n--- SCENARIO 2: CHAINLINK TEE ENCLAVE BLIND FULFILLMENT ---');
+    console.log('\n--- SCENARIO 2: TRUSTED LOCAL ORACLE FULFILLMENT ---');
     const teeSimulator = new ChainlinkTEESimulator({
       contractAddress,
       oracleSigner: signer1,
-      beeUrl
+      beeUrl,
     });
 
     const initialOracleBalance = await ethersProvider.getBalance(await signer1.getAddress());
+    const requestId = ethers.id(`local-request:${jobId}`);
+    await (await clientAudience1.contract.linkChainlinkRequest(requestId, jobId)).wait();
+    await assert.rejects(
+      teeSimulator.executeJobInTEE(jobId, ethers.id('unlinked'), encryptedSecret),
+      /does not match/,
+    );
 
     // Execute TEE job
-    const fulfillmentResult = await teeSimulator.executeJobInTEE(
+    await teeSimulator.executeJobInTEE(
       jobId,
+      requestId,
       encryptedSecret,
-      'What is the indemnification liability cap?'
+      'What is the indemnification liability cap?',
     );
 
     // Verify on-chain state post-fulfillment
     jobState = await clientAudience1.getJob(jobId);
     console.log(`[2.1] Verifying on-chain state post-fulfillment:`);
     console.log(`      Status:           ${jobState.status}`);
-    console.log(`      Attestation Hash: ${jobState.attestationHash}`);
+    console.log(`      Simulation Receipt: ${jobState.attestationHash}`);
     console.log(`      Result Summary:   ${jobState.resultSummary}`);
 
     if (jobState.status !== 'COMPLETED') {
@@ -114,7 +119,12 @@ async function runSmartContractTEETest() {
     if (jobState.rewardEth !== '0.0') {
       throw new Error('Test Failure: Escrow was not emptied after fulfillment');
     }
-    console.log('✅ SCENARIO 2 PASSED: TEE blind fulfillment & reward settlement verified!');
+    assert.equal(jobState.resultSummary, 'SIMULATION_COMPLETE');
+    assert.equal(
+      await contract.getFunction('pendingWithdrawals')(await signer1.getAddress()),
+      ethers.parseEther('0.05'),
+    );
+    console.log('✅ SCENARIO 2 PASSED: Simulator completion and withdrawal credit verified.');
 
     // -------------------------------------------------------------
     // SCENARIO 3: REFUND TIMELOCK IF SWARM TTL EXPIRES
@@ -125,18 +135,18 @@ async function runSmartContractTEETest() {
       '000000000000000000000000000000000000000000000000000000000000dead',
       1, // TaskType.EXECUTIVE_AUDIT
       60,
-      '0.02'
+      '0.02',
     );
 
     // Fast-forward EVM blockchain time by 100 seconds
     console.log('[3.2] Fast-forwarding EVM block timestamp by 100 seconds...');
-    await ganacheProvider.request({
+    await localProvider.request({
       method: 'evm_increaseTime',
-      params: [100]
+      params: [100],
     });
-    await ganacheProvider.request({
+    await localProvider.request({
       method: 'evm_mine',
-      params: []
+      params: [],
     });
 
     console.log('[3.3] Claiming refund on expired job...');
@@ -150,14 +160,15 @@ async function runSmartContractTEETest() {
     console.log('✅ SCENARIO 3 PASSED: Refund timelock protected user funds!');
 
     console.log('\n===========================================================');
-    console.log('🎉 ALL PHASE 3 SMART CONTRACT & TEE TESTS PASSED! ✅');
+    console.log('🎉 ALL LOCAL COORDINATOR AND SIMULATOR TESTS PASSED! ✅');
     console.log('===========================================================');
   } finally {
     await mockBee.stop();
+    await localProvider.disconnect();
   }
 }
 
-runSmartContractTEETest().catch(err => {
+runSmartContractTEETest().catch((err) => {
   console.error('Test suite failed:', err);
   process.exit(1);
 });

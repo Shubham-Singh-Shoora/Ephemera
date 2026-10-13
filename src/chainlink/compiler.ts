@@ -19,21 +19,21 @@ export function compileDeadDropCoordinator(): CompiledContractArtifact {
     language: 'Solidity',
     sources: {
       'DeadDropCoordinator.sol': {
-        content: sourceCode
-      }
+        content: sourceCode,
+      },
     },
     settings: {
       evmVersion: 'london',
       outputSelection: {
         '*': {
-          '*': ['abi', 'evm.bytecode.object']
-        }
+          '*': ['abi', 'evm.bytecode.object'],
+        },
       },
       optimizer: {
         enabled: true,
-        runs: 200
-      }
-    }
+        runs: 200,
+      },
+    },
   };
 
   const output = JSON.parse(solc.compile(JSON.stringify(input)));
@@ -50,7 +50,7 @@ export function compileDeadDropCoordinator(): CompiledContractArtifact {
   const artifact: CompiledContractArtifact = {
     contractName: 'DeadDropCoordinator',
     abi: contractObj.abi,
-    bytecode: `0x${contractObj.evm.bytecode.object}`
+    bytecode: `0x${contractObj.evm.bytecode.object}`,
   };
 
   // Ensure output directory exists
@@ -59,7 +59,7 @@ export function compileDeadDropCoordinator(): CompiledContractArtifact {
   fs.writeFileSync(
     path.join(outDir, 'DeadDropCoordinator.json'),
     JSON.stringify(artifact, null, 2),
-    'utf-8'
+    'utf-8',
   );
 
   return artifact;
@@ -72,5 +72,5 @@ if (process.argv[1] && process.argv[1].endsWith('compiler.ts')) {
   console.log(`✅ Compilation successful!`);
   console.log(`   Contract: ${res.contractName}`);
   console.log(`   Bytecode size: ${res.bytecode.length / 2} bytes`);
-  console.log(`   ABI methods: ${res.abi.filter(a => a.type === 'function').length} functions`);
+  console.log(`   ABI methods: ${res.abi.filter((a) => a.type === 'function').length} functions`);
 }

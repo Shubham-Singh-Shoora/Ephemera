@@ -3,28 +3,12 @@ pragma solidity ^0.8.20;
 
 /**
  * @title DeadDropCoordinator
- * @notice On-chain coordination referee for Ephemeral Swarm Dead-Drops and Chainlink TEEs.
- * 
- * Flow:
- * 1. Data Provider (Audience 1) uploads encrypted data to Swarm with TTL.
- * 2. Data Provider calls requestComputeJob(), locking escrow reward and providing:
- *    - swarmReference: The 64-char Swarm hash
- *    - taskType: RAG_QUERY (0), EXECUTIVE_AUDIT (1), LORA_FINE_TUNING (2)
- *    - ttlSeconds: Swarm postage expiration window
- *    - encryptedSecretsReference: Chainlink encrypted secrets for the TEE
- * 3. Chainlink TEE / Oracle executes blind computation in RAM and invokes fulfillComputeJob().
- * 4. Contract records immutable attestation hash & non-sensitive summary on-chain,
- *    and releases reward to the oracle / compute provider.
- * 5. If Swarm TTL expires without fulfillment, Data Provider can claim a refund.
+ * @notice Research escrow coordinator with an immutable trusted simulator oracle.
+ * The owner links request IDs. Only the configured oracle can complete an unexpired
+ * job, and settlement creates withdrawal credit. The legacy attestationHash and
+ * chainlinkRouter names do not imply hardware verification or Chainlink integration.
+ * Deadlines control settlement, not Swarm retention. All calldata is public.
  */
-
-interface IFunctionsClient {
-    function handleOracleFulfillment(
-        bytes32 requestId,
-        bytes memory response,
-        bytes memory err
-    ) external;
-}
 
 contract DeadDropCoordinator {
     enum TaskType {
@@ -53,13 +37,15 @@ contract DeadDropCoordinator {
     }
 
     address public owner;
-    address public chainlinkRouter;
+    address public immutable chainlinkRouter;
     uint256 public jobCount;
 
     // Mapping from jobId to ComputeJob
     mapping(bytes32 => ComputeJob) public jobs;
     // Mapping from Chainlink requestId to jobId
     mapping(bytes32 => bytes32) public requestToJobId;
+    mapping(bytes32 => bool) public jobLinked;
+    mapping(address => uint256) public pendingWithdrawals;
 
     event JobRequested(
         bytes32 indexed jobId,
@@ -91,30 +77,35 @@ contract DeadDropCoordinator {
 
     modifier onlyRouter() {
         require(
-            msg.sender == chainlinkRouter || msg.sender == owner,
+            msg.sender == chainlinkRouter,
             "Caller is not authorized Chainlink Router"
         );
         _;
     }
 
     constructor(address _chainlinkRouter) {
+        require(_chainlinkRouter != address(0), "Invalid router address");
         owner = msg.sender;
         chainlinkRouter = _chainlinkRouter;
     }
 
     /**
-     * @notice Registers a new blind compute request.
+     * @notice Registers a simulation request and locks an optional reward.
      * @param swarmReference Swarm reference hash of encrypted chunks
      * @param taskType Task type (0 = RAG, 1 = Audit, 2 = LoRA)
-     * @param ttlSeconds Duration before Swarm batches expire and chunks vanish
+     * @param ttlSeconds Settlement deadline duration, independent of storage retention
      */
     function requestComputeJob(
         string calldata swarmReference,
         TaskType taskType,
         uint256 ttlSeconds
     ) external payable returns (bytes32 jobId) {
-        require(bytes(swarmReference).length > 0, "Invalid Swarm reference");
-        require(ttlSeconds >= 60, "TTL must be at least 60 seconds");
+        require(bytes(swarmReference).length == 64, "Invalid Swarm reference");
+        for (uint256 i = 0; i < 64; i++) {
+            bytes1 c = bytes(swarmReference)[i];
+            require((c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66), "Reference must be lowercase hex");
+        }
+        require(ttlSeconds >= 60 && ttlSeconds <= 86400, "TTL must be 60 to 86400 seconds");
 
         jobCount++;
         jobId = keccak256(
@@ -154,18 +145,21 @@ contract DeadDropCoordinator {
     }
 
     /**
-     * @notice Links an external Chainlink requestId to an internal jobId.
+     * @notice Owner links a simulation requestId to one pending internal jobId.
      */
     function linkChainlinkRequest(bytes32 requestId, bytes32 jobId) external onlyOwner {
         require(jobs[jobId].requester != address(0), "Job does not exist");
+        require(requestId != bytes32(0) && requestToJobId[requestId] == bytes32(0), "Request already linked or invalid");
+        require(!jobLinked[jobId] && jobs[jobId].status == JobStatus.PENDING && block.timestamp < jobs[jobId].expiresAt, "Job not linkable");
         requestToJobId[requestId] = jobId;
+        jobLinked[jobId] = true;
     }
 
     /**
-     * @notice Callback invoked by Chainlink Functions / TEE Enclave upon completion.
-     * @param requestId Chainlink Functions request ID
-     * @param attestationHash Cryptographic proof of computation in RAM
-     * @param resultSummary De-identified diagnostic summary or LoRA weight delta hash
+     * @notice Completion recorded by the trusted simulator oracle.
+     * @param requestId Previously linked simulation request ID
+     * @param attestationHash Nonzero simulation receipt, not verified computation proof
+     * @param resultSummary Must be the fixed SIMULATION_COMPLETE status
      */
     function fulfillComputeJob(
         bytes32 requestId,
@@ -173,15 +167,15 @@ contract DeadDropCoordinator {
         string calldata resultSummary
     ) external onlyRouter {
         bytes32 jobId = requestToJobId[requestId];
-        // If not mapped via requestId, allow direct jobId reference if called with owner/router
-        if (jobId == bytes32(0)) {
-            jobId = requestId;
-        }
+        require(jobId != bytes32(0), "Unknown request");
+        require(attestationHash != bytes32(0), "Empty receipt");
+        // This research coordinator records a fixed status only, never document excerpts.
+        require(keccak256(bytes(resultSummary)) == keccak256("SIMULATION_COMPLETE"), "Only simulation status allowed");
 
         ComputeJob storage job = jobs[jobId];
         require(job.requester != address(0), "Job does not exist");
         require(job.status == JobStatus.PENDING, "Job is not in pending status");
-        require(block.timestamp <= job.expiresAt, "Swarm dead-drop has expired!");
+        require(block.timestamp < job.expiresAt, "Job has expired");
 
         job.status = JobStatus.COMPLETED;
         job.attestationHash = attestationHash;
@@ -191,8 +185,7 @@ contract DeadDropCoordinator {
         if (job.rewardAmount > 0) {
             uint256 payout = job.rewardAmount;
             job.rewardAmount = 0;
-            (bool success, ) = payable(msg.sender).call{value: payout}("");
-            require(success, "Reward transfer failed");
+            pendingWithdrawals[msg.sender] += payout;
         }
 
         emit JobFulfilled(
@@ -205,7 +198,7 @@ contract DeadDropCoordinator {
     }
 
     /**
-     * @notice If Swarm TTL expires without TEE fulfillment, requester reclaims escrowed funds.
+     * @notice After the job deadline, its requester receives withdrawal credit.
      * @param jobId Unique identifier of the job
      */
     function refundExpiredJob(bytes32 jobId) external {
@@ -213,15 +206,14 @@ contract DeadDropCoordinator {
         require(job.requester != address(0), "Job does not exist");
         require(msg.sender == job.requester || msg.sender == owner, "Unauthorized");
         require(job.status == JobStatus.PENDING, "Job is not pending");
-        require(block.timestamp > job.expiresAt, "Job has not expired yet");
+        require(block.timestamp >= job.expiresAt, "Job has not expired yet");
 
         job.status = JobStatus.EXPIRED_REFUNDED;
         uint256 refundAmount = job.rewardAmount;
         job.rewardAmount = 0;
 
         if (refundAmount > 0) {
-            (bool success, ) = payable(job.requester).call{value: refundAmount}("");
-            require(success, "Refund transfer failed");
+            pendingWithdrawals[job.requester] += refundAmount;
         }
 
         emit JobRefunded(jobId, job.requester, refundAmount);
@@ -236,10 +228,14 @@ contract DeadDropCoordinator {
     }
 
     /**
-     * @notice Update authorized Chainlink router address.
+     * @notice Withdraw the caller's credit to a chosen nonzero recipient.
      */
-    function setChainlinkRouter(address _newRouter) external onlyOwner {
-        require(_newRouter != address(0), "Invalid router address");
-        chainlinkRouter = _newRouter;
+    function withdraw(address payable recipient) external {
+        require(recipient != address(0), "Invalid recipient");
+        uint256 amount = pendingWithdrawals[msg.sender];
+        require(amount > 0, "Nothing to withdraw");
+        pendingWithdrawals[msg.sender] = 0;
+        (bool success, ) = recipient.call{value: amount}("");
+        require(success, "Withdrawal failed");
     }
 }

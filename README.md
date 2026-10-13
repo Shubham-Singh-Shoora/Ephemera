@@ -1,119 +1,55 @@
-# Ephemeral, Dead-Drop AI Knowledge Base (Ethereum Swarm & TEEs)
+# ephemera
 
-A high-security, zero-trace Web3 data room designed for confidential AI model fine-tuning and Retrieval-Augmented Generation (RAG).
+An interactive exploration of temporary document rooms. Follow a fictional file as copies spread, draw a boundary, find a passage, and move time forward. The working prototype encrypts and searches a test document entirely in the browser.
 
-## Architecture Overview
+This repository also contains isolated Swarm and coordinator research tools. They are simulations, not verified confidential compute or proof of worldwide deletion.
 
-1. **Storage Layer (Ethereum Swarm)**: Decentralized, metadata-blind, 4KB chunk-shredded storage with Time-To-Live (TTL) postage stamp batches.
-2. **Confidentiality Layer (Client-Side AES-256-GCM)**: Authenticated encryption with 12-byte IV and 16-byte GCM integrity tags.
-3. **Compute Layer (TEE / Chainlink Functions)**: Blind, in-memory execution environment with zero disk writes.
-4. **Pruning Mechanism**: When the postage batch TTL expires, Swarm network nodes automatically discard the underlying chunks, mathematically erasing the data worldwide.
+## Run locally
 
----
+Requires Node 22.13 or newer.
 
-## Phase 1 Implementation Summary
-
-- [`src/crypto/aes.ts`](file:///d:/BlockDev/SWARM/src/crypto/aes.ts): High-security authenticated encryption & decryption.
-- [`src/crypto/keygen.ts`](file:///d:/BlockDev/SWARM/src/crypto/keygen.ts): Ephemeral 256-bit key generator and Web3 wallet signature derivation (HKDF).
-- [`src/swarm/postage.ts`](file:///d:/BlockDev/SWARM/src/swarm/postage.ts): Swarm 4KB chunk math ($2^{depth} \times 4096$) and TTL calculations.
-- [`src/swarm/client.ts`](file:///d:/BlockDev/SWARM/src/swarm/client.ts): `@ethersphere/bee-js` client wrapper for health checks, batches, and uploads.
-- [`src/dev-mock/mock-bee.ts`](file:///d:/BlockDev/SWARM/src/dev-mock/mock-bee.ts): Built-in local mock Bee node server for instant testing.
-- [`src/ingestion.ts`](file:///d:/BlockDev/SWARM/src/ingestion.ts): Dead-Drop ingestion pipeline producing Swarm reference receipts.
-
----
-
-## Phase 2 Implementation Summary (Universal In-Memory AI Engine)
-
-- [`src/ai/stream-reader.ts`](file:///d:/BlockDev/SWARM/src/ai/stream-reader.ts): Direct-to-RAM streaming from Swarm with zero disk writes.
-- [`src/ai/knowledge-base.ts`](file:///d:/BlockDev/SWARM/src/ai/knowledge-base.ts): In-memory semantic vector index with cosine similarity search.
-- [`src/ai/inference-engine.ts`](file:///d:/BlockDev/SWARM/src/ai/inference-engine.ts): Multi-industry RAG, executive compliance audits, and ephemeral LoRA fine-tuning parameter updates.
-- [`src/ai/memory-scrubber.ts`](file:///d:/BlockDev/SWARM/src/ai/memory-scrubber.ts): Cryptographic RAM wiping (`0x00`) guaranteeing zero forensic residue.
-- [`src/ai/runner.ts`](file:///d:/BlockDev/SWARM/src/ai/runner.ts): Orchestrator managing ephemeral sessions from ingestion to RAM purging.
-
----
-
-## Phase 3 Implementation Summary (Smart Contract & Chainlink TEE Trigger)
-
-- [`contracts/DeadDropCoordinator.sol`](file:///d:/BlockDev/SWARM/contracts/DeadDropCoordinator.sol): Solidity smart contract managing escrow, compute requests, attestation proofs, and refunds.
-- [`chainlink/tee-runner.js`](file:///d:/BlockDev/SWARM/chainlink/tee-runner.js): Chainlink Functions JavaScript code executed inside hardware-protected TEE enclaves.
-- [`src/chainlink/secrets.ts`](file:///d:/BlockDev/SWARM/src/chainlink/secrets.ts): Threshold encryption manager securing ephemeral keys for the DON TEE.
-- [`src/chainlink/compiler.ts`](file:///d:/BlockDev/SWARM/src/chainlink/compiler.ts): Automated Solidity compiler producing ABI & EVM bytecode via `solc`.
-- [`src/chainlink/coordinator-client.ts`](file:///d:/BlockDev/SWARM/src/chainlink/coordinator-client.ts): Ethers.js client for Data Providers and Oracles.
-- [`src/chainlink/tee-simulator.ts`](file:///d:/BlockDev/SWARM/src/chainlink/tee-simulator.ts): TEE enclave runner simulating blind Swarm retrieval, RAM inference, and on-chain callback.
-
----
-
-## Phase 4 Implementation Summary (Next.js Dashboard & Testnet Deployment)
-
-- [`frontend/`](file:///d:/BlockDev/SWARM/frontend): Production-grade Next.js 14 App Router testing dashboard.
-  - **No-Jargon Enterprise UX**: Clean, authentic interface designed for institutional compliance officers and data scientists.
-  - **Self-Destructing Data Room Creator**: Drag-and-drop or select pre-loaded datasets (Finance, Healthcare, Legal M&A) with configurable TTL countdown timers (15m, 2h, 24h).
-  - **Live Room Monitor**: Real-time second-by-second countdown with an emergency manual "Trigger Self-Destruct Now" button that instantly wipes storage chunks and produces a global 404.
-  - **Confidential Analysis Console**: Run semantic RAG questions, automated executive compliance audits, or LoRA parameter updates with instant RAM scrubbing (`0x00` wipe).
-  - **Cryptographic Audit Proof Drawer**: Expandable drawer surfacing Swarm reference hashes, batch IDs, encrypted chunk breakdowns, and cryptographic verification stamps.
-- [`scripts/deploy-sepolia.ts`](file:///d:/BlockDev/SWARM/scripts/deploy-sepolia.ts): Automated Ethereum Sepolia testnet deployment script for `DeadDropCoordinator.sol`.
-
----
-
-## Quickstart & Verification
-
-### 1. Launch the Next.js Testing Dashboard
-```bash
-# Start the web UI (runs on http://localhost:3000)
+```sh
+npm ci
+npm --prefix frontend ci
 npm run ui
-
-# Or build the production frontend
-npm run ui:build
 ```
 
-### 2. Run Backend & Cryptography Unit Tests
-```bash
-# Cryptography Unit Tests (AES-256-GCM + IV validation)
-npm run test:crypto
+Open http://localhost:3000. The landing journey uses Three.js through React Three Fiber and Drei, Motion for transitions, and Radix dialogs, tabs, and sliders. It includes button and keyboard alternatives, a reduced-motion mode, and a WebGL fallback. There are no external fonts or model assets.
 
-# Key Generator & Wallet Signature Derivation Demo
-npm run keygen
+Choose **Enter the room** to try the real local workflow. Accepts one UTF-8 TXT, MD, CSV, or JSON document up to 256 KB. The app does not send documents or searches to a server, create browser storage entries, or call an AI service. Refreshing, closing the dialog, or reaching the deadline ends the room. Your original file stays on your device.
 
-# Full Swarm Dead-Drop Storage Lifecycle (Ingest -> 4KB Chunks -> Download -> Verify)
-npm run test:dead-drop
+## Check the implementation
 
-# Phase 2 Multi-Industry AI Inference (RAG, Executive Audit, LoRA, RAM Scrubber)
-npm run test:ai
-
-# Compile Solidity Smart Contract
-npm run compile
-
-# Phase 3 Smart Contract, Escrow Bounty, & Chainlink TEE Verification
-npm run test:contract
+```sh
+npm run check          # backend build, adversarial tests, legacy tests, frontend build, HTTP checks
+npm test               # attack and failure scenarios, including local EVM tests
+npm run format:check
+npm audit
+npm --prefix frontend audit
 ```
 
-### 3. Deploy to Ethereum Sepolia Testnet (Optional)
-```bash
-# Ensure SEPOLIA_RPC_URL and PRIVATE_KEY are configured in .env
-npm run deploy:sepolia
-```
+Legacy tests use fictional fixtures and an in-process Hardhat EVM. They do not use real funds, contact a live chain, or deploy contracts. `npm run mock-bee` starts a bounded loopback-only mock. The mock's seconds-based batches intentionally differ from real Swarm postage economics.
 
----
+## Product decisions
 
-## Deploy to Vercel (1-Click or CLI)
+- One shared room lifecycle; industry-specific policy can be added later without creating separate sector engines.
+- Intended customers: the document-owning team, reviewers working on a bounded task, and security/operations leads evaluating the controls.
+- Business model remains a discovery hypothesis. No pricing or payments in the UI.
+- No invitations, shared authorization, live Swarm storage, real AI inference, model training, or verified enclave execution in the browser prototype.
+- Previous plaintext upload, analysis, and expiry endpoints return **410 Gone**. This is an intentional breaking change.
 
-This project is fully Vercel deployment ready.
+## Read the evidence
 
-### Option A: Via Vercel Dashboard (GitHub / GitLab)
-1. Push your repository to GitHub.
-2. In [Vercel](https://vercel.com/new), select **Import Git Repository**.
-3. In **Project Settings**:
-   - Set **Root Directory**: `frontend` (or leave as root, as `vercel.json` and `vercel-build` are pre-configured).
-   - Framework Preset: **Next.js**.
-4. Click **Deploy**.
+- [Business model and customer hypotheses](docs/BUSINESS_MODEL.md)
+- [Architecture and scale decisions](docs/ARCHITECTURE.md)
+- [Security findings, fixes, ratings, and remaining limits](docs/SECURITY_REVIEW.md)
+- [Validation and browser test scenarios](docs/VALIDATION.md)
+- [Code guidelines](CONTRIBUTING.md)
 
-### Option B: Via Vercel CLI
-```bash
-# Deploy straight to Vercel preview
-npx vercel
+Closing a room releases the app's key and clears its owned state. It cannot erase screenshots, originals, previously made copies, or every memory trace. Swarm postage expiry is not a global deletion guarantee. The coordinator trusts an explicit simulator oracle; a simulation receipt is not hardware attestation.
 
-# Or deploy straight from frontend directory
-cd frontend && npx vercel --prod
-```
+## Hosting
 
+Build the frontend with `npm run ui:build`. Prefer `frontend` as the hosting project root. The server uses per-response CSP nonces, so the route is dynamic. Deploy only synthetic-data prototypes until the production gates in the security review are met. Configure edge limits and monitoring in the hosting platform separately; application code alone does not provide DDoS protection.
 
+No deployment is performed by the test commands. The optional Sepolia script requires an explicit simulation oracle address and rejects other chain IDs. Existing on-chain deployments are not updated by source changes.

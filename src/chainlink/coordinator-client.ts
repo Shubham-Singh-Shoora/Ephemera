@@ -1,14 +1,17 @@
 import { ethers } from 'ethers';
 
 export const DEAD_DROP_COORDINATOR_ABI = [
-  "function requestComputeJob(string calldata swarmReference, uint8 taskType, uint256 ttlSeconds) external payable returns (bytes32)",
-  "function fulfillComputeJob(bytes32 requestId, bytes32 attestationHash, string calldata resultSummary) external",
-  "function refundExpiredJob(bytes32 jobId) external",
-  "function linkChainlinkRequest(bytes32 requestId, bytes32 jobId) external",
-  "function getJobDetails(bytes32 jobId) external view returns (tuple(bytes32 jobId, address requester, string swarmReference, uint8 taskType, uint256 createdAt, uint256 expiresAt, uint256 rewardAmount, uint8 status, bytes32 attestationHash, string resultSummary))",
-  "event JobRequested(bytes32 indexed jobId, address indexed requester, string swarmReference, uint8 taskType, uint256 expiresAt, uint256 rewardAmount)",
-  "event JobFulfilled(bytes32 indexed jobId, bytes32 indexed requestId, bytes32 attestationHash, string resultSummary, uint256 fulfilledAt)",
-  "event JobRefunded(bytes32 indexed jobId, address indexed requester, uint256 refundedAmount)"
+  'function requestComputeJob(string calldata swarmReference, uint8 taskType, uint256 ttlSeconds) external payable returns (bytes32)',
+  'function fulfillComputeJob(bytes32 requestId, bytes32 attestationHash, string calldata resultSummary) external',
+  'function refundExpiredJob(bytes32 jobId) external',
+  'function withdraw(address payable recipient) external',
+  'function pendingWithdrawals(address account) external view returns (uint256)',
+  'function linkChainlinkRequest(bytes32 requestId, bytes32 jobId) external',
+  'function requestToJobId(bytes32 requestId) external view returns (bytes32)',
+  'function getJobDetails(bytes32 jobId) external view returns (tuple(bytes32 jobId, address requester, string swarmReference, uint8 taskType, uint256 createdAt, uint256 expiresAt, uint256 rewardAmount, uint8 status, bytes32 attestationHash, string resultSummary))',
+  'event JobRequested(bytes32 indexed jobId, address indexed requester, string swarmReference, uint8 taskType, uint256 expiresAt, uint256 rewardAmount)',
+  'event JobFulfilled(bytes32 indexed jobId, bytes32 indexed requestId, bytes32 attestationHash, string resultSummary, uint256 fulfilledAt)',
+  'event JobRefunded(bytes32 indexed jobId, address indexed requester, uint256 refundedAmount)',
 ];
 
 export interface OnChainJobDetails {
@@ -40,14 +43,11 @@ export class DeadDropCoordinatorClient {
     swarmReference: string,
     taskType: number,
     ttlSeconds: number,
-    rewardEth: string = '0.01'
+    rewardEth: string = '0.01',
   ): Promise<string> {
-    const tx = await this.contract.requestComputeJob(
-      swarmReference,
-      taskType,
-      ttlSeconds,
-      { value: ethers.parseEther(rewardEth) }
-    );
+    const tx = await this.contract.requestComputeJob(swarmReference, taskType, ttlSeconds, {
+      value: ethers.parseEther(rewardEth),
+    });
     const receipt = await tx.wait();
 
     // Find JobRequested event
@@ -64,22 +64,18 @@ export class DeadDropCoordinatorClient {
   }
 
   /**
-   * Chainlink TEE Oracle fulfills the compute job with attestation
+   * Trusted simulator fulfills a linked request; no attestation is verified.
    */
   public async fulfillJob(
-    jobId: string,
+    requestId: string,
     attestationHash: string,
-    resultSummary: string
+    resultSummary: string,
   ): Promise<ethers.TransactionReceipt> {
-    const formattedHash = attestationHash.startsWith('0x') 
-      ? attestationHash 
+    const formattedHash = attestationHash.startsWith('0x')
+      ? attestationHash
       : `0x${attestationHash}`;
 
-    const tx = await this.contract.fulfillComputeJob(
-      jobId,
-      formattedHash,
-      resultSummary
-    );
+    const tx = await this.contract.fulfillComputeJob(requestId, formattedHash, resultSummary);
     return await tx.wait();
   }
 
@@ -100,7 +96,7 @@ export class DeadDropCoordinatorClient {
       rewardEth: ethers.formatEther(raw.rewardAmount),
       status: statusMap[Number(raw.status)] || 'PENDING',
       attestationHash: raw.attestationHash,
-      resultSummary: raw.resultSummary
+      resultSummary: raw.resultSummary,
     };
   }
 

@@ -1,103 +1,89 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
-/**
- * Encrypted payload structure for AES-256-GCM authenticated encryption.
- * - iv: 12 bytes (96 bits) initialization vector / nonce
- * - authTag: 16 bytes (128 bits) authentication tag for integrity verification
- * - ciphertext: The encrypted raw data
- */
 export interface EncryptedPayload {
   algorithm: 'aes-256-gcm';
-  iv: string;         // Hex encoded
-  authTag: string;    // Hex encoded
-  ciphertext: string; // Hex encoded
+  iv: string;
+  authTag: string;
+  ciphertext: string;
   timestamp: number;
 }
-
-/**
- * Encrypts an arbitrary Buffer or string using AES-256-GCM.
- * AES-256-GCM is an Authenticated Encryption with Associated Data (AEAD) cipher.
- * It guarantees both CONFIDENTIALITY (cannot be read without key) and INTEGRITY (cannot be tampered with).
- *
- * @param plaintext Data to encrypt (Buffer or UTF-8 string)
- * @param keyHex 32-byte (64 hex characters) encryption key
- * @returns Serialized EncryptedPayload
- */
+const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
+function hex(value: unknown, bytes?: number): value is string {
+  return (
+    typeof value === 'string' &&
+    /^(?:[0-9a-fA-F]{2})*$/.test(value) &&
+    (bytes === undefined || value.length === bytes * 2)
+  );
+}
+function keyBytes(key: string): Buffer {
+  if (!hex(key, 32)) throw new Error('Invalid key: expected exactly 32 bytes of hexadecimal.');
+  return Buffer.from(key, 'hex');
+}
+function validate(payload: unknown): asserts payload is EncryptedPayload {
+  if (!payload || typeof payload !== 'object') throw new Error('Malformed encrypted payload.');
+  const p = payload as EncryptedPayload;
+  if (
+    p.algorithm !== 'aes-256-gcm' ||
+    !hex(p.iv, 12) ||
+    !hex(p.authTag, 16) ||
+    !hex(p.ciphertext) ||
+    p.ciphertext.length > MAX_PAYLOAD_BYTES * 2 ||
+    !Number.isSafeInteger(p.timestamp) ||
+    p.timestamp < 0
+  )
+    throw new Error('Malformed encrypted payload.');
+}
 export function encryptAES256GCM(plaintext: Buffer | string, keyHex: string): EncryptedPayload {
-  const key = Buffer.from(keyHex, 'hex');
-  if (key.length !== 32) {
-    throw new Error(`Invalid key length: expected 32 bytes (256 bits), got ${key.length} bytes`);
-  }
-
-  // 12-byte (96-bit) IV is the NIST-recommended size for GCM mode
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-
-  const inputBuffer = typeof plaintext === 'string' ? Buffer.from(plaintext, 'utf-8') : plaintext;
-
-  const encryptedBuffer = Buffer.concat([
-    cipher.update(inputBuffer),
-    cipher.final()
-  ]);
-
-  const authTag = cipher.getAuthTag();
-
-  return {
-    algorithm: 'aes-256-gcm',
-    iv: iv.toString('hex'),
-    authTag: authTag.toString('hex'),
-    ciphertext: encryptedBuffer.toString('hex'),
-    timestamp: Date.now()
-  };
-}
-
-/**
- * Decrypts an EncryptedPayload using AES-256-GCM.
- * Throws an error if the key is incorrect or if the ciphertext was tampered with.
- *
- * @param payload EncryptedPayload with iv, authTag, and ciphertext
- * @param keyHex 32-byte (64 hex characters) encryption key
- * @returns Decrypted Buffer
- */
-export function decryptAES256GCM(payload: EncryptedPayload, keyHex: string): Buffer {
-  const key = Buffer.from(keyHex, 'hex');
-  if (key.length !== 32) {
-    throw new Error(`Invalid key length: expected 32 bytes (256 bits), got ${key.length} bytes`);
-  }
-
-  const iv = Buffer.from(payload.iv, 'hex');
-  const authTag = Buffer.from(payload.authTag, 'hex');
-  const ciphertext = Buffer.from(payload.ciphertext, 'hex');
-
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
-
+  const key = keyBytes(keyHex);
+  const input = typeof plaintext === 'string' ? Buffer.from(plaintext, 'utf8') : plaintext;
   try {
-    const decrypted = Buffer.concat([
-      decipher.update(ciphertext),
-      decipher.final()
-    ]);
-    return decrypted;
-  } catch (err: any) {
-    throw new Error(`Decryption failed! Invalid key or corrupted/tampered data: ${err.message}`);
+    if (input.length > MAX_PAYLOAD_BYTES) throw new Error('Payload exceeds 2 MB limit.');
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
+    const encrypted = Buffer.concat([cipher.update(input), cipher.final()]);
+    return {
+      algorithm: 'aes-256-gcm',
+      iv: iv.toString('hex'),
+      authTag: cipher.getAuthTag().toString('hex'),
+      ciphertext: encrypted.toString('hex'),
+      timestamp: Date.now(),
+    };
+  } finally {
+    key.fill(0);
+    if (typeof plaintext === 'string') input.fill(0);
   }
 }
-
-/**
- * Serializes the encrypted payload into a compact JSON Buffer ready for Swarm upload.
- */
+export function decryptAES256GCM(payload: EncryptedPayload, keyHex: string): Buffer {
+  validate(payload);
+  const key = keyBytes(keyHex);
+  let partial: Buffer | undefined;
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(payload.iv, 'hex'), {
+      authTagLength: 16,
+    });
+    decipher.setAuthTag(Buffer.from(payload.authTag, 'hex'));
+    partial = decipher.update(Buffer.from(payload.ciphertext, 'hex'));
+    const final = decipher.final();
+    try {
+      return Buffer.concat([partial, final]);
+    } finally {
+      final.fill(0);
+    }
+  } catch {
+    throw new Error('Decryption failed: invalid key or tampered data.');
+  } finally {
+    key.fill(0);
+    partial?.fill(0);
+  }
+}
 export function packEncryptedData(payload: EncryptedPayload): Buffer {
-  return Buffer.from(JSON.stringify(payload), 'utf-8');
+  validate(payload);
+  return Buffer.from(JSON.stringify(payload), 'utf8');
 }
-
-/**
- * Parses a Buffer downloaded from Swarm back into an EncryptedPayload.
- */
 export function unpackEncryptedData(buffer: Buffer): EncryptedPayload {
-  const str = buffer.toString('utf-8');
-  const parsed = JSON.parse(str);
-  if (!parsed.iv || !parsed.authTag || !parsed.ciphertext) {
-    throw new Error('Malformed encrypted payload format: missing iv, authTag, or ciphertext');
-  }
-  return parsed as EncryptedPayload;
+  if (buffer.length > MAX_PAYLOAD_BYTES * 2 + 1024)
+    throw new Error('Encrypted envelope is too large.');
+  const parsed: unknown = JSON.parse(buffer.toString('utf8'));
+  validate(parsed);
+  return parsed;
 }

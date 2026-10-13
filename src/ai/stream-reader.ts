@@ -7,7 +7,7 @@ export type DetectedContentType = 'json' | 'markdown' | 'code' | 'plaintext';
 export interface DecryptedDeadDropSession {
   contentType: DetectedContentType;
   rawText: string;
-  parsedData: any;
+  parsedData: unknown;
   byteSize: number;
   swarmReference: string;
   dispose: () => void;
@@ -23,27 +23,31 @@ export class DirectRAMStreamReader {
   /**
    * Fetches the encrypted dead-drop from Swarm directly into RAM,
    * decrypts it on the fly, and returns the session object.
-   * 
+   *
    * NEVER writes anything to disk.
-   * 
+   *
    * @param swarmReference 64-char Swarm hash
    * @param ephemeralKey 64-char hex AES-256 key
    */
-  public async readAndDecrypt(swarmReference: string, ephemeralKey: string): Promise<DecryptedDeadDropSession> {
+  public async readAndDecrypt(
+    swarmReference: string,
+    ephemeralKey: string,
+  ): Promise<DecryptedDeadDropSession> {
     // Step 1: Download raw encrypted bytes from Swarm into RAM Buffer
-    let rawEncryptedBuffer: Buffer | null = await this.client.downloadDeadDrop(swarmReference);
+    const rawEncryptedBuffer = await this.client.downloadDeadDrop(swarmReference);
+    let decryptedBuffer: Buffer | null = null;
 
     try {
       // Step 2: Unpack and decrypt in-memory
       const unpacked = unpackEncryptedData(rawEncryptedBuffer);
-      let decryptedBuffer: Buffer | null = decryptAES256GCM(unpacked, ephemeralKey);
+      decryptedBuffer = decryptAES256GCM(unpacked, ephemeralKey);
 
-      const rawText = decryptedBuffer.toString('utf-8');
+      const rawText = new TextDecoder('utf-8', { fatal: true }).decode(decryptedBuffer);
       const byteSize = decryptedBuffer.length;
 
       // Detect format
       let contentType: DetectedContentType = 'plaintext';
-      let parsedData: any = null;
+      let parsedData: unknown = null;
 
       try {
         parsedData = JSON.parse(rawText);
@@ -51,15 +55,16 @@ export class DirectRAMStreamReader {
       } catch {
         if (rawText.includes('# ') || rawText.includes('## ') || rawText.includes('**')) {
           contentType = 'markdown';
-        } else if (rawText.includes('function ') || rawText.includes('contract ') || rawText.includes('import ')) {
+        } else if (
+          rawText.includes('function ') ||
+          rawText.includes('contract ') ||
+          rawText.includes('import ')
+        ) {
           contentType = 'code';
         } else {
           contentType = 'plaintext';
         }
       }
-
-      // Track buffer for disposal
-      const bufferToScrub = decryptedBuffer;
 
       const session: DecryptedDeadDropSession = {
         contentType,
@@ -68,18 +73,25 @@ export class DirectRAMStreamReader {
         byteSize,
         swarmReference,
         dispose: () => {
-          MemoryScrubber.scrubBuffer(bufferToScrub);
-          decryptedBuffer = null;
-          rawEncryptedBuffer = null;
-        }
+          try {
+            MemoryScrubber.scrubObject(session.parsedData);
+          } finally {
+            session.rawText = '';
+            session.parsedData = null;
+            session.byteSize = 0;
+            session.swarmReference = '';
+          }
+        },
       };
 
       return session;
     } finally {
-      // Immediately scrub the encrypted buffer once decrypted
-      if (rawEncryptedBuffer) {
+      // Conversion and parse errors must not skip wiping the decrypted byte buffer.
+      try {
+        MemoryScrubber.scrubBuffer(decryptedBuffer);
+        decryptedBuffer = null;
+      } finally {
         MemoryScrubber.scrubBuffer(rawEncryptedBuffer);
-        rawEncryptedBuffer = null;
       }
     }
   }

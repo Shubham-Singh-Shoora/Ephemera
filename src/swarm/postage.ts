@@ -1,6 +1,6 @@
 /**
  * Swarm Postage Batch & Capacity Calculations
- * 
+ *
  * Swarm stores all data in 4 KiB (4096 bytes) Binary Merkle Tree (BMT) chunks.
  * A postage stamp batch allocates 2^depth chunks on the network.
  */
@@ -18,11 +18,11 @@ export interface BatchCapacityInfo {
 
 /**
  * Calculates storage capacity for a given Swarm postage batch depth.
- * 
+ *
  * @param depth Batch depth (typically 17 to 30)
  */
 export function calculateBatchCapacity(depth: number): BatchCapacityInfo {
-  if (depth < 16 || depth > 32) {
+  if (!Number.isInteger(depth) || depth < 16 || depth > 32) {
     throw new Error(`Batch depth must be between 16 and 32, got ${depth}`);
   }
 
@@ -38,17 +38,23 @@ export function calculateBatchCapacity(depth: number): BatchCapacityInfo {
     nominalBytes,
     nominalMegabytes,
     nominalGigabytes,
-    recommendedMaxBytes
+    recommendedMaxBytes,
   };
 }
 
 /**
  * Calculates the recommended minimum batch depth needed to store a dataset of given byte size.
- * 
+ *
  * @param dataSizeBytes Size of data in bytes
  * @returns Minimum depth (at least 17 as per Swarm protocol specifications)
  */
 export function getRecommendedDepthForSize(dataSizeBytes: number): number {
+  if (
+    !Number.isSafeInteger(dataSizeBytes) ||
+    dataSizeBytes < 0 ||
+    dataSizeBytes > calculateBatchCapacity(32).recommendedMaxBytes
+  )
+    throw new Error('Unsupported dataset size.');
   // Swarm minimum depth on network is 17 (approx 512MB)
   let depth = 17;
   while (calculateBatchCapacity(depth).recommendedMaxBytes < dataSizeBytes && depth < 32) {

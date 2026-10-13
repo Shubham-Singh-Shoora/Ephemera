@@ -1,10 +1,11 @@
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
 import crypto from 'crypto';
+import type { Server } from 'node:http';
 import { SWARM_CHUNK_SIZE_BYTES } from '../swarm/postage.js';
 
 /**
  * Educational Mock Bee Node Server
- * 
+ *
  * Implements the core Swarm REST API specifications:
  * - 4KB BMT chunking simulation
  * - Postage Stamp Batches with TTL (Time-To-Live)
@@ -37,7 +38,7 @@ export class MockBeeServer {
   private batches = new Map<string, MockBatch>();
   private chunks = new Map<string, StoredDeadDrop>();
   private port: number;
-  private server: any = null;
+  private server: Server | null = null;
   private prunerInterval: NodeJS.Timeout | null = null;
 
   constructor(port: number = 1633) {
@@ -56,25 +57,33 @@ export class MockBeeServer {
       utilization: 1,
       ttlSeconds: 3600, // 1 hour default
       expiresAt: Date.now() + 3600 * 1000,
-      label: 'Default Ephemeral Batch'
+      label: 'Default Ephemeral Batch',
     });
   }
 
   private setupRoutes() {
+    this.app.disable('x-powered-by');
     this.app.use((req, res, next) => {
-      // console.log(`[MockBee Request] ${req.method} ${req.url}`);
+      res.setHeader('Cache-Control', 'no-store');
+      // Loopback binding alone does not stop a browser using DNS rebinding.
+      try {
+        const host = new URL(`http://${req.headers.host ?? ''}`).hostname;
+        if (!['localhost', '127.0.0.1', '[::1]'].includes(host))
+          return res.status(403).json({ message: 'Loopback host required' });
+      } catch {
+        return res.status(403).json({ message: 'Loopback host required' });
+      }
+      // Local test fixture only; reject browser-origin writes.
+      if (req.headers.origin && req.method !== 'GET')
+        return res.status(403).json({ message: 'Browser writes disabled' });
       next();
     });
-    this.app.use(express.json());
-    // Raw body parser for /bytes endpoint
-    this.app.use(express.raw({ type: '*/*', limit: '50mb' }));
-
     // Root endpoint (checked by bee.checkConnection() and isConnected())
     this.app.get('/', (req, res) => {
       res.json({
         status: 'ok',
         version: '2.4.0-mock',
-        apiVersion: '6.0.0'
+        apiVersion: '6.0.0',
       });
     });
 
@@ -84,7 +93,7 @@ export class MockBeeServer {
         status: 'ok',
         version: '2.4.0-mock',
         apiVersion: '6.0.0',
-        debugApiVersion: '6.0.0'
+        debugApiVersion: '6.0.0',
       });
     });
 
@@ -99,14 +108,14 @@ export class MockBeeServer {
         block: 1234567,
         chainTip: 1234567,
         totalAmount: '1000000000',
-        currentPrice: 1
+        currentPrice: '1',
       });
     });
 
     // List postage stamp batches
     this.app.get('/stamps', (req, res) => {
       const now = Date.now();
-      const list = Array.from(this.batches.values()).map(b => {
+      const list = Array.from(this.batches.values()).map((b) => {
         const remainingTtl = Math.max(0, Math.floor((b.expiresAt - now) / 1000));
         return {
           batchID: b.batchId,
@@ -118,7 +127,7 @@ export class MockBeeServer {
           bucketDepth: b.bucketDepth,
           blockNumber: 1234567,
           immutableFlag: false,
-          batchTTL: remainingTtl
+          batchTTL: remainingTtl,
         };
       });
       res.json({ stamps: list });
@@ -128,13 +137,24 @@ export class MockBeeServer {
     this.app.post('/stamps/:amount/:depth', (req, res) => {
       const amount = req.params.amount;
       const depth = parseInt(req.params.depth, 10);
-      const label = (req.query.label as string) || 'Ephemeral Dead-Drop Batch';
+      if (
+        !/^\d+$/.test(req.params.depth) ||
+        depth < 17 ||
+        depth > 32 ||
+        !/^[1-9]\d{0,4}$/.test(amount) ||
+        Number(amount) > 86400
+      )
+        return res.status(400).json({ message: 'Invalid mock batch parameters' });
+      if (this.batches.size >= 64)
+        return res.status(503).json({ message: 'Mock batch capacity reached' });
+      const label = req.query.label ?? 'Ephemeral Dead-Drop Batch';
+      if (typeof label !== 'string' || label.length > 80)
+        return res.status(400).json({ message: 'Invalid batch label' });
 
       // Duration: if user passes custom ttl header or query, use it, else calculate from amount
       // For demo / simulation purposes, amount = duration in seconds if <= 86400, or standard calculation
-      const ttlSeconds = parseInt(amount, 10) > 0 && parseInt(amount, 10) <= 86400 
-        ? parseInt(amount, 10) 
-        : 7200; // default 2 hours
+      const ttlSeconds =
+        parseInt(amount, 10) > 0 && parseInt(amount, 10) <= 86400 ? parseInt(amount, 10) : 7200; // default 2 hours
 
       const batchId = crypto.randomBytes(32).toString('hex');
       const batch: MockBatch = {
@@ -145,51 +165,71 @@ export class MockBeeServer {
         utilization: 0,
         ttlSeconds,
         expiresAt: Date.now() + ttlSeconds * 1000,
-        label
+        label,
       };
 
       this.batches.set(batchId, batch);
-      console.log(`[MockBee] Created new postage batch ${batchId.slice(0, 16)}... (TTL: ${ttlSeconds}s)`);
+      console.log(
+        `[MockBee] Created new postage batch ${batchId.slice(0, 16)}... (TTL: ${ttlSeconds}s)`,
+      );
       res.status(201).json({ batchID: batchId });
     });
 
     // Upload raw bytes to Swarm (POST /bytes)
-    this.app.post('/bytes', (req, res) => {
-      const batchId = req.headers['swarm-postage-batch-id'] as string;
-      if (!batchId) {
-        return res.status(400).json({ message: 'Missing swarm-postage-batch-id header' });
-      }
+    this.app.post(
+      '/bytes',
+      express.raw({ type: 'application/octet-stream', limit: '5mb', inflate: false }),
+      (req, res) => {
+        const batchId = req.headers['swarm-postage-batch-id'] as string;
+        if (!batchId) {
+          return res.status(400).json({ message: 'Missing swarm-postage-batch-id header' });
+        }
 
-      const batch = this.batches.get(batchId);
-      if (!batch || Date.now() > batch.expiresAt) {
-        return res.status(400).json({ message: 'Invalid or expired postage stamp batch' });
-      }
+        const batch = this.batches.get(batchId);
+        if (!batch || Date.now() >= batch.expiresAt) {
+          return res.status(400).json({ message: 'Invalid or expired postage stamp batch' });
+        }
 
-      const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body);
-      if (!data || data.length === 0) {
-        return res.status(400).json({ message: 'Empty body payload' });
-      }
+        const data = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+        if (!data || data.length === 0) {
+          return res.status(400).json({ message: 'Empty body payload' });
+        }
 
-      // Swarm chunking simulation:
-      // In real Swarm, payload is sliced into 4096-byte BMT chunks.
-      // Reference hash is the Merkle root of the chunk tree.
-      const chunkCount = Math.ceil(data.length / SWARM_CHUNK_SIZE_BYTES);
-      const reference = crypto.createHash('sha256').update(data).digest('hex');
+        // Swarm chunking simulation:
+        // In real Swarm, payload is sliced into 4096-byte BMT chunks.
+        // Reference hash is the Merkle root of the chunk tree.
+        const chunkCount = Math.ceil(data.length / SWARM_CHUNK_SIZE_BYTES);
+        const reference = crypto.createHash('sha256').update(data).digest('hex');
+        const existing = this.chunks.get(reference);
+        if (existing) {
+          data.fill(0);
+          if (existing.batchId !== batchId)
+            return res.status(409).json({ message: 'Reference already belongs to another batch' });
+          return res.status(201).json({ reference });
+        }
+        const storedBytes = [...this.chunks.values()].reduce((sum, chunk) => sum + chunk.size, 0);
+        if (this.chunks.size >= 64 || storedBytes + data.length > 16 * 1024 * 1024) {
+          data.fill(0);
+          return res.status(503).json({ message: 'Mock storage capacity reached' });
+        }
 
-      this.chunks.set(reference, {
-        reference,
-        batchId,
-        data,
-        chunkCount,
-        size: data.length,
-        uploadedAt: Date.now()
-      });
+        this.chunks.set(reference, {
+          reference,
+          batchId,
+          data,
+          chunkCount,
+          size: data.length,
+          uploadedAt: Date.now(),
+        });
 
-      console.log(`[MockBee] Uploaded ${data.length} bytes -> Sliced into ${chunkCount} chunk(s) (4KB each)`);
-      console.log(`[MockBee] Generated Swarm Reference: ${reference}`);
+        console.log(
+          `[MockBee] Uploaded ${data.length} bytes -> Sliced into ${chunkCount} chunk(s) (4KB each)`,
+        );
+        console.log(`[MockBee] Generated Swarm Reference: ${reference}`);
 
-      res.status(201).json({ reference });
-    });
+        res.status(201).json({ reference });
+      },
+    );
 
     // Download raw bytes from Swarm (GET /bytes/:reference)
     this.app.get('/bytes/:reference', (req, res) => {
@@ -202,16 +242,26 @@ export class MockBeeServer {
 
       // Check if associated batch has expired
       const batch = this.batches.get(stored.batchId);
-      if (!batch || Date.now() > batch.expiresAt) {
+      if (!batch || Date.now() >= batch.expiresAt) {
         // Drop data chunks permanently!
+        stored.data.fill(0);
         this.chunks.delete(reference);
-        console.log(`[MockBee] Access denied: Batch ${stored.batchId.slice(0, 16)}... has expired! Chunks dropped.`);
-        return res.status(404).json({ message: 'Swarm postage batch expired: Chunks purged by garbage collector (404)' });
+        console.log(
+          `[MockBee] Access denied: Batch ${stored.batchId.slice(0, 16)}... has expired! Chunks dropped.`,
+        );
+        return res.status(404).json({
+          message: 'Swarm postage batch expired: Chunks purged by garbage collector (404)',
+        });
       }
 
       res.setHeader('Content-Type', 'application/octet-stream');
       res.send(stored.data);
     });
+    const bodyError: ErrorRequestHandler = (error, _req, res, _next) => {
+      const status = error?.status === 413 ? 413 : error?.status === 415 ? 415 : 400;
+      res.status(status).json({ message: 'Unsupported or oversized request body' });
+    };
+    this.app.use(bodyError);
   }
 
   /**
@@ -222,31 +272,41 @@ export class MockBeeServer {
       const now = Date.now();
       for (const [ref, stored] of this.chunks.entries()) {
         const batch = this.batches.get(stored.batchId);
-        if (batch && now > batch.expiresAt) {
-          console.log(`\n🔥 [MockBee Pruner] TTL Expired for Batch ${stored.batchId.slice(0, 16)}...!`);
-          console.log(`🔥 [MockBee Pruner] Pruning Swarm Reference: ${ref} (Zero traces remaining)`);
+        if (!batch || now >= batch.expiresAt) {
+          stored.data.fill(0);
           this.chunks.delete(ref);
         }
       }
+      for (const [id, batch] of this.batches) if (now >= batch.expiresAt) this.batches.delete(id);
     }, 1000);
   }
 
   public async start(): Promise<void> {
-    return new Promise((resolve) => {
-      this.server = this.app.listen(this.port, () => {
+    return new Promise((resolve, reject) => {
+      this.server = this.app.listen(this.port, '127.0.0.1', () => {
         console.log(`🐝 Mock Bee Node running on http://localhost:${this.port}`);
         console.log(`   Simulating 4KB Merkle chunking & Swarm postage pruning`);
         this.startPruner();
         resolve();
       });
+      this.server.on('error', reject);
+      this.server.requestTimeout = 10_000;
+      this.server.headersTimeout = 5_000;
+      this.server.maxConnections = 32;
     });
   }
 
   public async stop(): Promise<void> {
+    for (const stored of this.chunks.values()) stored.data.fill(0);
+    this.chunks.clear();
+    this.batches.clear();
     if (this.prunerInterval) clearInterval(this.prunerInterval);
-    if (this.server) {
+    const server = this.server;
+    if (server) {
       return new Promise((resolve) => {
-        this.server.close(() => resolve());
+        server.close(() => resolve());
+        server.closeAllConnections();
+        this.server = null;
       });
     }
   }

@@ -1,21 +1,15 @@
 import crypto from 'crypto';
 
 /**
- * Forensic In-Memory Sanitization & RAM Scrubber
- * 
- * In a Trusted Execution Environment (TEE) or confidential data room,
- * sensitive patient, financial, or source code data must NEVER linger
- * in RAM after processing completes.
- * 
- * Standard garbage collection simply removes pointers; the actual memory
- * pages remain intact until overwritten. This module enforces proactive
- * DoD 5220.22-M-style cryptographic wiping of in-memory buffers.
+ * Best-effort cleanup of owned mutable buffers.
+ * Does not erase managed strings, engine copies, swap or crash dumps, and
+ * provides neither hardware attestation nor a forensic erasure guarantee.
  */
 
 export class MemoryScrubber {
   /**
    * Overwrites a Buffer with random bytes, then completely zeroes it out.
-   * 
+   *
    * @param buffer The Buffer containing plaintext or cryptographic keys
    */
   public static scrubBuffer(buffer: Buffer | Uint8Array | null | undefined): void {
@@ -35,39 +29,33 @@ export class MemoryScrubber {
       }
     } catch (err) {
       // Fallback zero fill
-      if (Buffer.isBuffer(buffer)) {
-        buffer.fill(0);
-      }
+      buffer.fill(0);
     }
   }
 
   /**
    * Deeply cleans an object by scrubbing any Buffers and clearing keys.
    */
-  public static scrubObject(obj: any): void {
-    if (!obj || typeof obj !== 'object') return;
-
-    if (Buffer.isBuffer(obj) || obj instanceof Uint8Array) {
-      MemoryScrubber.scrubBuffer(obj);
-      return;
-    }
-
-    if (Array.isArray(obj)) {
-      for (let i = 0; i < obj.length; i++) {
-        if (typeof obj[i] === 'object') {
-          MemoryScrubber.scrubObject(obj[i]);
-        }
-        obj[i] = null;
+  public static scrubObject(obj: unknown, seen = new WeakSet<object>()): void {
+    const pending: unknown[] = [obj];
+    while (pending.length) {
+      const current = pending.pop();
+      if (!current || typeof current !== 'object' || seen.has(current)) continue;
+      seen.add(current);
+      if (Buffer.isBuffer(current) || current instanceof Uint8Array) {
+        MemoryScrubber.scrubBuffer(current);
+        continue;
       }
-      obj.length = 0;
-      return;
-    }
-
-    for (const key of Object.keys(obj)) {
-      if (typeof obj[key] === 'object' && obj[key] !== null) {
-        MemoryScrubber.scrubObject(obj[key]);
+      // Use data descriptors so cleanup never invokes a document getter or setter.
+      for (const key of Object.keys(current)) {
+        const descriptor = Object.getOwnPropertyDescriptor(current, key);
+        if (!descriptor || !('value' in descriptor)) continue;
+        if (descriptor.value && typeof descriptor.value === 'object')
+          pending.push(descriptor.value);
+        if (descriptor.writable) Reflect.set(current, key, null);
       }
-      obj[key] = null;
+      if (Array.isArray(current) && Object.getOwnPropertyDescriptor(current, 'length')?.writable)
+        current.length = 0;
     }
   }
 
