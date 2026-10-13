@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Next.js Build
+frontend/.next/
+frontend/out/
+
+# Build outputs
+dist/
+build/
+
+# Environment Variables & Private Keys
+.env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+
+# Vercel
+.vercel/
+frontend/.vercel/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,47 @@
+{
+  "name": "ephemeral-dead-drop-swarm",
+  "version": "1.0.0",
+  "description": "Ephemeral, Dead-Drop AI Knowledge Base on Ethereum Swarm & TEEs",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "ingest": "tsx src/ingestion.ts",
+    "keygen": "tsx src/crypto/keygen.ts",
+    "mock-bee": "tsx src/dev-mock/mock-bee.ts",
+    "test:crypto": "tsx test/crypto.test.ts",
+    "test:dead-drop": "tsx test/dead-drop.test.ts",
+    "test:ai": "tsx test/ai-engine.test.ts",
+    "compile": "tsx src/chainlink/compiler.ts",
+    "test:contract": "tsx test/smart-contract-tee.test.ts",
+    "ui": "npm --prefix frontend run dev",
+    "ui:build": "npm --prefix frontend run build",
+    "deploy:sepolia": "tsx scripts/deploy-sepolia.ts",
+    "vercel-build": "npm --prefix frontend install && npm --prefix frontend run build"
+  },
+  "keywords": [
+    "swarm",
+    "bzz",
+    "confidential-computing",
+    "tee",
+    "rag",
+    "zero-trace",
+    "ephemeral-data"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@ethersphere/bee-js": "^9.1.0",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "express": "^4.21.2",
+    "solc": "^0.8.37"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.4",
+    "ganache": "^7.9.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
