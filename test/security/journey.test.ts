@@ -2,41 +2,44 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   chapterAt,
-  nextCopy,
-  CHAPTERS,
-  COPY_PLACES,
-  ROLES,
-  STORY_DURATIONS,
-  illustratedTime,
+  clampProgress,
+  defaultScenario,
+  SCENARIOS,
+  advanceTraining,
+  trainingStatus,
+  validateBrief,
 } from '../../frontend/src/features/journey/story.js';
 
-test('the ending follows the selected boundary duration and never runs negative', () => {
-  assert.deepEqual(
-    STORY_DURATIONS.map((duration) => illustratedTime(duration, 0)),
-    ['05:00', '15:00', '60:00'],
-  );
-  assert.equal(illustratedTime(5, 50), '02:30');
-  assert.equal(illustratedTime(60, 100), '00:00');
-  assert.equal(illustratedTime(15, 500), '00:00');
-  assert.equal(illustratedTime(5, -1), '05:00');
+test('scroll boundaries and invalid values cannot produce a missing chapter', () => {
+  assert.equal(chapterAt(-1), 0);
+  assert.equal(chapterAt(1), 5);
+  assert.equal(chapterAt(100), 5);
+  assert.equal(chapterAt(NaN), 0);
+  assert.equal(clampProgress(Infinity), 0);
+  for (let chapter = 0; chapter < 6; chapter++) assert.equal(chapterAt(chapter / 5), chapter);
 });
-
-test('scroll position cannot produce an invalid chapter', () => {
-  assert.equal(chapterAt(-1000, 800), 0);
-  assert.equal(chapterAt(0, 800), 0);
-  assert.equal(chapterAt(800, 800), 1);
-  assert.equal(chapterAt(4000, 800), CHAPTERS.length - 1);
-  assert.equal(chapterAt(Infinity, 800), 0);
-  assert.equal(chapterAt(10, 0), 0);
+test('the two participants lead to the three actual training arrangements', () => {
+  assert.equal(defaultScenario('provider'), 'own-model');
+  assert.equal(defaultScenario('trainer'), 'request-data');
+  assert.equal(SCENARIOS['find-partner'].role, 'provider');
+  assert.match(SCENARIOS['own-model'].via, /your model/);
 });
-
-test('repeat interaction remains bounded instead of allocating endless 3D objects', () => {
-  let copies = 1;
-  for (let n = 0; n < 10000; n++) copies = nextCopy(copies);
-  assert.equal(copies, COPY_PLACES.length);
+test('training animation remains bounded and cannot jump ahead after a suspended frame', () => {
+  assert.ok(advanceTraining(20, 120) < 21);
+  assert.equal(advanceTraining(100, 0.1), 100);
+  assert.equal(advanceTraining(0, -10), 0);
+  assert.equal(trainingStatus(100), 'Preview complete');
+  assert.equal(trainingStatus(89), 'Checking the model output');
+  assert.equal(trainingStatus(90), 'Releasing the trained model');
+  let progress = 0;
+  for (let frame = 0; frame < 1081; frame++) progress = advanceTraining(progress, 1 / 60);
+  assert.equal(progress, 100);
 });
-
-test('the story retains all three intended customers without adding sector forks', () => {
-  assert.deepEqual(Object.keys(ROLES), ['owner', 'reviewer', 'security']);
-  assert.ok(ROLES.owner.detail.includes('intended customer'));
+test('local planning accepts supported values and rejects prototype names and arbitrary limits', () => {
+  const valid = { scenario: 'own-model', dataKind: 'Images', hours: 3 } as const;
+  assert.equal(validateBrief(valid), true);
+  assert.equal(validateBrief({ ...valid, scenario: '__proto__' as never }), false);
+  assert.equal(validateBrief({ ...valid, hours: 0 as never }), false);
+  assert.equal(validateBrief({ ...valid, hours: Infinity as never }), false);
+  assert.equal(validateBrief({ ...valid, dataKind: 'secret executable' as never }), false);
 });

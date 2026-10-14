@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 export const metadata: Metadata = {
-  title: 'ephemera — A study in leaving less behind',
+  title: 'ephemera — Where data and models meet',
   description:
-    'Follow the life of a file through an interactive story, then explore a temporary, browser-only data room. A research prototype with clear boundaries.',
+    'Step into a shared training playground for data providers and AI teams. Explore three ways to connect, agree on a purpose, and train a model. An interactive testnet concept.',
   robots: { index: false, follow: false },
 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,6 +1,6 @@
 # ephemera
 
-An interactive exploration of temporary document rooms. Follow a fictional file as copies spread, draw a boundary, find a passage, and move time forward. The working prototype encrypts and searches a test document entirely in the browser.
+An interactive exploration of a shared training playground for data providers and AI teams. Travel through a Three.js world, choose a collaboration route, set up a sample agreement, and explore an illustrated training session.
 
 This repository also contains isolated Swarm and coordinator research tools. They are simulations, not verified confidential compute or proof of worldwide deletion.
 
@@ -16,7 +16,7 @@ npm run ui
 
 Open http://localhost:3000. The landing journey uses Three.js through React Three Fiber and Drei, Motion for transitions, and Radix dialogs, tabs, and sliders. It includes button and keyboard alternatives, a reduced-motion mode, and a WebGL fallback. There are no external fonts or model assets.
 
-Choose **Enter the room** to try the real local workflow. Accepts one UTF-8 TXT, MD, CSV, or JSON document up to 256 KB. The app does not send documents or searches to a server, create browser storage entries, or call an AI service. Refreshing, closing the dialog, or reaching the deadline ends the room. Your original file stays on your device.
+Choose **Find your path** to build a sample session. The landing experience is a concept: no provider is contacted, no dataset is uploaded, and no model is trained. Session choices stay in page memory and reset on reload. The older local document-search module remains isolated in the repository for its security research and tests; it is not part of the public product journey.
 
 ## Check the implementation
 
@@ -33,7 +33,7 @@ Legacy tests use fictional fixtures and an in-process Hardhat EVM. They do not u
 ## Product decisions
 
 - One shared room lifecycle; industry-specific policy can be added later without creating separate sector engines.
-- Intended customers: the document-owning team, reviewers working on a bounded task, and security/operations leads evaluating the controls.
+- Two participants: organizations providing datasets, and teams training AI models. A provider may train its own model, find a training partner, or respond to a team's data request.
 - Business model remains a discovery hypothesis. No pricing or payments in the UI.
 - No invitations, shared authorization, live Swarm storage, real AI inference, model training, or verified enclave execution in the browser prototype.
 - Previous plaintext upload, analysis, and expiry endpoints return **410 Gone**. This is an intentional breaking change.

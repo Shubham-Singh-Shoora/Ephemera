@@ -1,44 +1,35 @@
 # Product and business model hypothesis
 
-## Decision
+## Product direction
 
-Build one temporary document room first. Start with product teams reviewing a project with an outside consultant or researcher. The initial buyer hypothesis is the team or company that owns the information, with product/operations initiating the purchase and security/IT approving it. This is a hypothesis to validate, not evidence of existing customers or demand.
+Ephemera connects data providers with AI training teams and provides a shared environment for an agreed training task. These are the two participants, including cases where the same organization supplies both. Document questions and keyword search are not the product workflow.
 
-The current browser-only prototype proves a single-person workflow. It does not yet deliver the collaboration that a paying customer would need. There is no pricing, payment integration, paid tier, invitation flow, or live customer claim in the frontend.
+| Arrangement             | Who brings the data                 | Who brings the model               | Intended outcome                    |
+| ----------------------- | ----------------------------------- | ---------------------------------- | ----------------------------------- |
+| Train an owned model    | An institution or organization      | Its own AI team                    | A model for the organization's work |
+| Find a training partner | A data provider                     | A partner selected by the provider | A model for the agreed purpose      |
+| Request specific data   | A provider that accepts the request | The requesting AI team             | A model trained on approved data    |
 
-## The people
+The provider decides whether to participate. Both sides agree on purpose, permitted models, access duration, outputs, and subsequent model use before training. The model is intended to train within a controlled environment instead of giving the training team a downloadable source dataset. Trained models can retain information about their data; output checks and privacy testing remain necessary.
 
-| Person        | Their job                                   | Their reason to use the product                 | Current prototype                                           |
-| ------------- | ------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| Room owner    | Choose the document and review window       | Avoid another indefinitely shared folder        | Can choose a test file, timer, and close locally            |
-| Reviewer      | Find the passages needed for a bounded task | Get context without organizing another archive  | Same-browser keyword search only; no separate identity      |
-| Security lead | Check handling and access boundaries        | Review enforceable controls and honest evidence | Can inspect the published limits; no compliance certificate |
+## Who might pay, and why
 
-The landing page follows a file through five interactive chapters: the original, growing copies, a chosen boundary, useful work, and ending access. A Three.js scene changes with clicks, sliders, and scrolling. The boundary chapter has keyboard-accessible tabs for the three intended roles. These are intended product roles, not implemented permissions.
+The initial buyer hypothesis is the organization commissioning training, whether that is the provider or the AI team. It pays for useful matches, controlled execution, and reliable collaboration. Revenue could combine organization subscriptions for collaboration controls and a clearly bounded fee for training compute. Private deployment and integration support may be separate services. A provider may negotiate compensation for approved use of its data; rights, consent, and terms must be resolved before building any marketplace settlement.
 
-## Potential revenue and incentives
+Do not sell datasets, activity data, or advertising access. Do not reuse customer data to train unrelated models. Introduce neither a token economy nor pricing until discovery demonstrates demand and the operational costs are understood. No pricing, payments, live partners, or successful-training claims appear in the prototype.
 
-If discovery supports the idea, charge the owning organization a workspace subscription for collaboration controls, policy management, and support. Only after confidential compute is verified, consider usage-based processing fees tied to completed work and clearly bounded resource consumption. Private deployments and integration support could serve organizations with stricter operational needs. Guests should not need to buy a subscription simply to review one document.
+## Testnet scope
 
-Do not monetize document contents, sell activity data, introduce advertising, or train models on customer material. Avoid a token economy until it solves a demonstrated customer problem. The service should earn money for useful controls and reliable operations, not for retaining more data. No prices or commercial claims are proposed for this testnet phase.
+The frontend is an interactive concept with a local session planner and an illustrated training timeline. It has no matching service, participant identities, enforceable training agreements, actual model training, or attested computing environment. All choices remain in page memory; no dataset is uploaded. The separate local document-search experiments are retained for research and tests, not represented as the training product.
 
-## What to learn before building commerce
+## One playground, with policies
 
-1. Interview 5–8 product/project owners and their external reviewers. Ask about the last actual review: tools, copies created, access removal, and what went wrong. Do not lead with blockchain or AI.
-2. Observe whether participants can open the sample, find the launch passage, identify where data lives, and close the room without help. Target at least 4 of 5 independent completions before adding features.
-3. Show the explicit limitations. Ask whether expiration still has value when authorized reviewers can take screenshots. If their requirement is preventing all copies, do not promise this product can meet it.
-4. Test the buyer hypothesis with a concrete proposed collaboration workflow and an expression of interest. Measure willingness to run a synthetic-data pilot before willingness to pay.
-5. Compare a temporary room against simply sharing a file with an expiry date. Continue only if customers value a specific additional control enough to change their workflow.
+Build one shared room lifecycle first. Identity, permission checks, job limits, cancellation, key delivery, and output review should be shared infrastructure. Dataset formats and industry requirements can use versioned validation and policy adapters; naming a room "health" or "finance" is not a security boundary or a compliance guarantee.
 
-Keep research notes free of document content. The prototype has no analytics. Any later measurement needs a documented, minimal event schema and consent where applicable.
+## Validate before commerce
 
-## One room, with optional policies later
-
-Industry folders are not security boundaries. The room lifecycle, encryption, identity checks, expiration, and resource limits should be shared. Future domain-specific validation should be an explicitly selected policy or parser behind the same room interface. Health, finance, and legal workloads require their own requirements review before support is claimed; labels alone do not make a room compliant.
-
-## Release sequence
-
-1. **Now:** one document, one browser, bounded local search, honest limits, adversarial tests.
-2. **Next pilot:** authenticated owner/reviewer identities, per-action authorization, short-lived capabilities, minimal metadata, deletion semantics, and recovery decisions reviewed before any shared storage is introduced.
-3. **Later research:** attestation-verified compute, key delivery bound to a verified enclave and job, output controls, independent security review, and availability testing. Do not treat local simulation hashes as proof.
-4. **Only after validation:** commercial packaging. No pricing UI is needed to test the product or these roles.
+1. Interview institutions holding useful datasets and teams with a concrete training need. Compare all three arrangements against their most recent real project.
+2. Test whether each party understands its responsibilities, who approves access, and what can leave the environment.
+3. Use synthetic-data pilots to validate matching, training feasibility, interruption recovery, output review, and measurable value.
+4. Prove execution isolation, attestation-bound key delivery, per-action authorization, retention limits, and availability controls before handling real datasets.
+5. Test willingness to sponsor a pilot before selecting packaging or prices. Keep research notes free of sensitive dataset contents.

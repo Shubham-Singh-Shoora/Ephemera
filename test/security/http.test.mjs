@@ -35,6 +35,22 @@ for (const route of ['upload', 'analyze', 'expire'])
     assert.equal(response.headers.get('access-control-allow-origin'), null);
     assert.equal((await response.json()).code, 'BROWSER_ONLY');
   });
+
+test('the server-rendered journey explains both participants and all three arrangements without an upload or question form', async () => {
+  const html = await (await fetch(base)).text();
+  for (const label of [
+    'Data providers',
+    'AI training teams',
+    'Train my own model',
+    'Find a training partner',
+    'Request the right data',
+  ])
+    assert.ok(html.includes(label), label);
+  for (const id of ['enter', 'meet', 'connect', 'terms', 'train', 'forward'])
+    assert.ok(html.includes(`id="${id}"`), id);
+  assert.match(html, /no real model/);
+  assert.doesNotMatch(html, /type="file"|Ask a question|Enter the room/);
+});
 test('bounded local request burst leaves the application responsive', async () => {
   const responses = await Promise.all(
     Array.from({ length: 24 }, () =>

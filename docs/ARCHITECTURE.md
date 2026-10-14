@@ -21,7 +21,11 @@ docs/                          product decisions, security review, validation
 
 The frontend deliberately does not import the Node research code. There is no shared process-global room map, plaintext upload API, database, browser persistence, external asset host, model service, or live blockchain connection in the product path. The three previous POST routes return 410 without reading their bodies. This is a breaking API change; clients must use the local room or design a separately reviewed future service.
 
-## Current lifecycle
+## Public training journey
+
+The public interface is a six-stage, full-viewport Three.js journey for data providers and AI training teams. Three arrangements share one playground: provider-owned models, provider-selected training partners, and trainer-led data requests. Its agreement, training timeline, and session planner are explicit demonstrations, with no network submission or persistence. Page scroll drives a continuous camera path; all controls also have HTML and keyboard equivalents. The old keyword-search workbench is not mounted in this product experience.
+
+## Isolated local research lifecycle
 
 The workbench accepts a UTF-8 text file (TXT, MD, CSV, JSON) of at most 256 KB or a fictional sample. File contents are treated as text, never executable markup. `RoomSession` checks sizes, names, content, and a small set of allowed durations. Web Crypto generates a non-extractable AES-GCM key and fresh 96-bit IV; only ciphertext, the key handle, and minimal metadata remain in the room object.
 
@@ -45,4 +49,4 @@ The coordinator has an immutable trusted simulator oracle, linked request IDs, o
 
 ## Accessibility and motion
 
-Use real buttons and labels, visible keyboard focus, text error messages, and reduced-motion alternatives. The HTML journey controls remain usable without WebGL or transitions. Five scroll chapters share a sticky canvas; buttons also navigate between them. Desktop OrbitControls are only mounted in the room chapters; touch users retain vertical page scrolling. Mobile layouts reposition the scene and interactive panels. Timers are visible but are not announced every second to screen readers.
+Use real buttons and labels, visible keyboard focus, text error messages, and reduced-motion alternatives. Six chapters share a full-viewport canvas; buttons also navigate between them. The camera follows ordinary document scroll without intercepting the mouse wheel or touch gestures. Short windows and mobile use normal page flow without an internally scrolling story panel. Reduced-motion mode uses static chapter views and a manually controlled timeline. Visibility changes pause the illustration and rendering; no timer ticks are announced to screen readers. WebGL failure leaves all content and controls available with a CSS illustration.
